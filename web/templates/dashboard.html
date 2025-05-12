@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Cerraduras RFID | Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+    <link href="https://unpkg.com/boxicons@2.0.7/css/boxicons.min.css" rel="stylesheet" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="/static/img/favicon.png" type="image/x-icon">
+</head>
+
+<body>
+    <div class="sidebar">
+        <div class="logo-details">
+            <img src="/static/img/favicon.png" alt="Logo" class="logo" />
+            <span class="logo_name">ETec</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/dashboard" class="active"><i class="bx bx-grid-alt" style="color: #0a2558;"></i><span class="links_name_active">Inicio</span></a></li>
+            <li><a href="/usuarios"><i class="bx bx-id-card"></i><span class="links_name">Usuarios</span></a></li>
+            <li><a href="/logs"><i class="bx bx-history"></i><span class="links_name">Logs</span></a></li>
+            <li><a href="/api/logs/exportar"><i class="bx bx-download"></i><span class="links_name">Exportar Logs</span></a></li>
+            <li class="log_out"><a href="/logout"><i class="bx bx-log-out"></i><span class="links_name">Cerrar sesión</span></a></li>
+        </ul>
+    </div>
+
+    <section class="home-section">
+        <nav>
+            <div class="sidebar-button">
+                <i class="bx bx-menu sidebarBtn"></i>
+                <span class="dashboard">Panel de Control</span>
+            </div>
+            <div class="profile-details">
+                <img src="/static/img/favicon.png" alt="" />
+                <span class="admin_name">{{ session['admin'] }}</span>
+            </div>
+        </nav>
+
+        <div class="home-content">
+            <div class="overview-boxes">
+                <div class="box">
+                    <div class="right-side">
+                        <div class="box-topic">Accesos totales históricos</div>
+                        <div class="number" id="total"></div>
+                    </div>
+                    <i class="bx bx-bar-chart-alt-2 cart"></i>
+                </div>
+                <div class="box">
+                    <div class="right-side">
+                        <div class="box-topic">Accesos correctos</div>
+                        <div class="number" id="validos"></div>
+                    </div>
+                    <i class="bx bx-check cart two"></i>
+                </div>
+                <div class="box">
+                    <div class="right-side">
+                        <div class="box-topic">Accesos incorrectos</div>
+                        <div class="number" id="invalidos"></div>
+                    </div>
+                    <i class="bx bx-block cart three"></i>
+                </div>
+                <div class="box">
+                    <div class="right-side">
+                        <div class="box-topic">Último acceso registrado</div>
+                        <div class="number" id="ultimo"></div>
+                    </div>
+                    <i class="bx bx-time cart four"></i>
+                </div>
+            </div>
+
+            <!-- Tabla de Logs -->
+            <div class="sales-boxes">
+                <div class="recent-sales box">
+                    <div class="title">Logs de Accesos</div>
+                    <div class="table-responsive">
+                        <table id="dataTable" class="display" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>UID</th>
+                                    <th>Nombre</th>
+                                    <th>Fecha</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="log-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script>
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('total').innerText = data.total;
+                document.getElementById('validos').innerText = data.validos;
+                document.getElementById('invalidos').innerText = data.invalidos;
+                const fecha = new Date(data.ultimo_acceso);
+
+const dia = String(fecha.getDate()).padStart(2, '0');
+const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+const hora = String(fecha.getHours()).padStart(2, '0');
+const minuto = String(fecha.getMinutes()).padStart(2, '0');
+
+const formatoFinal = `${dia}/${mes} - ${hora}:${minuto}`;
+document.getElementById('ultimo').innerText = formatoFinal;
+
+            });
+
+        fetch('/api/logs?desde=2020-01-01&hasta=2099-12-31')
+            .then(res => res.json())
+            .then(data => {
+                let html = '';
+                data.forEach(l => {
+                    html += `<tr>
+                        <td>${l.id}</td>
+                        <td>${l.uid}</td>
+                        <td>${l.nombre}</td>
+                        <td>${l.fecha_hora}</td>
+                        <td>${l.estado}</td>
+                    </tr>`;
+                });
+                document.getElementById('log-body').innerHTML = html;
+                $('#dataTable').DataTable();
+            });
+    </script>
+    <script src="/static/js/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+body {
+  background: linear-gradient(135deg, #71b7e6, #9b59b6);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+.card {
+  border: none;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.img-left {
+  background: url('../img/Logo-completo.png') center center no-repeat;
+  background-size: contain;
+  width: 45%;
+}
+
+.card-body {
+  padding: 2rem;
+}
+
+.form-input {
+  position: relative;
+}
+
+.form-input span {
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  transform: translateY(-50%);
+  color: #aaa;
+}
+
+.form-input input {
+  padding-left: 40px;
+}
+
+.btn-primary {
+  background-color: #9b59b6;
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: #8e44ad;
+}
+
+.register-link {
+  color: #9b59b6;
+  text-decoration: none;
+}
+
+.register-link:hover {
+  color: #8e44ad;
+}
+
+@media (max-width: 768px) {
+  .img-left {
+      display: none;
+  }
+}

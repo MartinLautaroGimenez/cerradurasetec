@@ -1,0 +1,108 @@
+esphome:
+  name: wemosexample
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: beep_inicio
+
+esp8266:
+  board: d1_mini
+
+logger:
+
+api:
+  password: "1234"
+
+ota:
+  - platform: esphome
+    password: "1234"
+
+wifi:
+  ssid: "AP-MCP"
+  password: "5010867250"
+
+  ap:
+    ssid: "Wemosexample Fallback Hotspot"
+    password: "73IH4LcCRXxM"
+
+captive_portal:
+
+mqtt:
+  broker: "192.168.54.123"  # ⚠️ Cambiá por la IP de tu broker MQTT
+  username: "tu_usuario"
+  password: "tu_contraseña"
+  on_message:
+    - topic: esp/rfid/open
+      payload: "1"
+      then:
+        - logger.log: "✅ Acceso autorizado"
+        - script.execute: beep_correcto
+        - switch.turn_on: rele_control
+        - delay: 2s
+        - switch.turn_off: rele_control
+
+    - topic: esp/rfid/open
+      payload: "0"
+      then:
+        - logger.log: "❌ Acceso denegado"
+        - script.execute: beep_invalido
+
+# Pines SPI para el RC522
+spi:
+  clk_pin: D5
+  mosi_pin: D7
+  miso_pin: D6
+
+rc522_spi:
+  cs_pin: D8
+  reset_pin: D3
+  on_tag:
+    then:
+      - logger.log:
+          format: "💳 UID detectado: %s"
+          args: ["x.c_str()"]
+      - mqtt.publish:
+          topic: esp/rfid/uid
+          payload: !lambda 'return x;'
+
+# Buzzer en D1
+output:
+  - platform: gpio
+    pin: D4
+    id: led_rojo
+
+  - platform: esp8266_pwm
+    pin: D1
+    id: buzzer_output
+    frequency: 2000 Hz  # Frecuencia base del buzzer
+
+rtttl:
+  output: buzzer_output
+
+script:
+  - id: beep_inicio
+    then:
+      - rtttl.play: "inicio:d=4,o=5,b=100:8e"
+
+  - id: beep_correcto
+    then:
+      - rtttl.play: "ok:d=4,o=5,b=100:8c"
+
+  - id: beep_invalido
+    then:
+      - rtttl.play: "fail:d=4,o=5,b=140:8g,8g"
+
+light:
+  - platform: binary
+    name: "LED Rojo"
+    output: led_rojo
+
+switch:
+  - platform: gpio
+    pin: D2
+    name: "Relé Principal"
+    id: rele_control
+    inverted: false
+
+web_server:
+  port: 80
