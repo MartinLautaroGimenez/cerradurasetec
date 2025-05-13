@@ -450,3 +450,14 @@ nav .profile-details i{
 ol, ul {
   padding-left: 0 !important;
 }
+
+.sidebar .nav-links li a.active {
+  background: #ffffff; /* blanco o el color deseado */
+  color: #0a2558;
+  border-radius: 0px 20px 20px 0px; /* para que no quede esa forma rara */
+}
+
+.sidebar .nav-links li a.active i,
+.sidebar .nav-links li a.active span {
+  color: #0a2558 !important; /* asegúrate de que no quede blanco o sin contraste */
+}

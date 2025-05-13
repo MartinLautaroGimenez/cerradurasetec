@@ -2,3 +2,4 @@ Flask==2.3.2
 flask-cors==4.0.0
 bcrypt==4.1.2
 mysql-connector-python==8.3.0
+weasyprint==65.1

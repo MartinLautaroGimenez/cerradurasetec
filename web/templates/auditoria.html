@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Cerraduras RFID | Auditoría{% endblock %}
+{% block header %}Auditoría del Sistema{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <h5 class="mb-3">Historial de acciones administrativas</h5>
+
+    <div class="table-responsive">
+      <table id="tablaAuditoria" class="table table-striped w-100">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Acción</th>
+            <th>Administrador</th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoAuditoria"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+<script src="/static/js/script.js"></script>
+
+<script>
+  let tabla;
+  document.addEventListener('DOMContentLoaded', ()=>{
+    fetch('/api/auditoria')
+      .then(r=>r.json())
+      .then(data => {
+        const tbody = document.getElementById('cuerpoAuditoria');
+        tbody.innerHTML = data.map(a => `
+          <tr>
+            <td>${a.id}</td>
+            <td>${new Date(a.fecha).toLocaleString()}</td>
+            <td>${a.accion}</td>
+            <td>${a.usuario_admin}</td>
+          </tr>`).join('');
+        if(tabla) tabla.clear().destroy();
+        tabla = $('#tablaAuditoria').DataTable({
+          responsive:true,
+          order: [[1, 'desc']],
+          language:{url:'https://cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json'}
+        });
+      });
+  });
+  
+</script>
+{% endblock %}

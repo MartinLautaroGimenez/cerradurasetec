@@ -1,137 +1,236 @@
-<!DOCTYPE html>
-<html lang="es" dir="ltr">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8" />
-    <title>Cerraduras RFID | Dashboard</title>
-    <link rel="stylesheet" href="/static/css/style.css" />
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-    <link href="https://unpkg.com/boxicons@2.0.7/css/boxicons.min.css" rel="stylesheet" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="shortcut icon" href="/static/img/favicon.png" type="image/x-icon">
-</head>
+{% block title %}Cerraduras RFID | Dashboard{% endblock %}
+{% block header %}Panel de Control{% endblock %}
 
-<body>
-    <div class="sidebar">
-        <div class="logo-details">
-            <img src="/static/img/favicon.png" alt="Logo" class="logo" />
-            <span class="logo_name">ETec</span>
-        </div>
-        <ul class="nav-links">
-            <li><a href="/dashboard" class="active"><i class="bx bx-grid-alt" style="color: #0a2558;"></i><span class="links_name_active">Inicio</span></a></li>
-            <li><a href="/usuarios"><i class="bx bx-id-card"></i><span class="links_name">Usuarios</span></a></li>
-            <li><a href="/logs"><i class="bx bx-history"></i><span class="links_name">Logs</span></a></li>
-            <li><a href="/api/logs/exportar"><i class="bx bx-download"></i><span class="links_name">Exportar Logs</span></a></li>
-            <li class="log_out"><a href="/logout"><i class="bx bx-log-out"></i><span class="links_name">Cerrar sesión</span></a></li>
-        </ul>
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="overview-boxes">
+  <!-- Selector de laboratorio -->
+  <div class="box">
+    <div class="right-side">
+      <div class="box-topic">Seleccionar laboratorio</div>
+      <select id="selectorLaboratorio" class="form-select mt-2" style="
+        background: rgba(255,255,255,0.9);
+        border-radius: 8px;
+        padding: 6px 12px;
+        border: 1px solid #ccc;
+        width: 100%;
+        font-weight: 500;
+        transition: box-shadow 0.3s ease;
+      ">
+        <option value="">Todos los laboratorios</option>
+      </select>
+      <div id="loadingLabs" style="display:none; font-size: 12px; color: #888; margin-top: 4px;">Cargando datos...</div>
+
     </div>
+    <i class="bx bx-building-house cart"></i>
+  </div>
 
-    <section class="home-section">
-        <nav>
-            <div class="sidebar-button">
-                <i class="bx bx-menu sidebarBtn"></i>
-                <span class="dashboard">Panel de Control</span>
-            </div>
-            <div class="profile-details">
-                <img src="/static/img/favicon.png" alt="" />
-                <span class="admin_name">{{ session['admin'] }}</span>
-            </div>
-        </nav>
+  <!-- Tarjeta: Accesos correctos -->
+  <div class="box">
+    <div class="right-side">
+      <div class="box-topic">Accesos correctos</div>
+      <div class="number" id="validos">—</div>
+    </div>
+    <i class="bx bx-check cart two"></i>
+  </div>
 
-        <div class="home-content">
-            <div class="overview-boxes">
-                <div class="box">
-                    <div class="right-side">
-                        <div class="box-topic">Accesos totales históricos</div>
-                        <div class="number" id="total"></div>
-                    </div>
-                    <i class="bx bx-bar-chart-alt-2 cart"></i>
-                </div>
-                <div class="box">
-                    <div class="right-side">
-                        <div class="box-topic">Accesos correctos</div>
-                        <div class="number" id="validos"></div>
-                    </div>
-                    <i class="bx bx-check cart two"></i>
-                </div>
-                <div class="box">
-                    <div class="right-side">
-                        <div class="box-topic">Accesos incorrectos</div>
-                        <div class="number" id="invalidos"></div>
-                    </div>
-                    <i class="bx bx-block cart three"></i>
-                </div>
-                <div class="box">
-                    <div class="right-side">
-                        <div class="box-topic">Último acceso registrado</div>
-                        <div class="number" id="ultimo"></div>
-                    </div>
-                    <i class="bx bx-time cart four"></i>
-                </div>
-            </div>
+  <!-- Tarjeta: Accesos incorrectos -->
+  <div class="box">
+    <div class="right-side">
+      <div class="box-topic">Accesos incorrectos</div>
+      <div class="number" id="invalidos">—</div>
+    </div>
+    <i class="bx bx-block cart three"></i>
+  </div>
 
-            <!-- Tabla de Logs -->
-            <div class="sales-boxes">
-                <div class="recent-sales box">
-                    <div class="title">Logs de Accesos</div>
-                    <div class="table-responsive">
-                        <table id="dataTable" class="display" style="width:100%">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>UID</th>
-                                    <th>Nombre</th>
-                                    <th>Fecha</th>
-                                    <th>Estado</th>
-                                </tr>
-                            </thead>
-                            <tbody id="log-body">
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
+  <!-- Tarjeta: Último acceso -->
+  <div class="box">
+    <div class="right-side">
+      <div class="box-topic">Último acceso registrado</div>
+      <div class="number" id="ultimo">—</div>
+    </div>
+    <i class="bx bx-time cart four"></i>
+  </div>
+</div>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
-    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-    <script>
-        fetch('/api/stats')
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('total').innerText = data.total;
-                document.getElementById('validos').innerText = data.validos;
-                document.getElementById('invalidos').innerText = data.invalidos;
-                const fecha = new Date(data.ultimo_acceso);
+<!-- Tabla de Logs -->
+<div class="sales-boxes">
+  <div class="recent-sales box">
+    <div class="title">Logs de Accesos</div>
+    <div class="table-responsive">
+      <table id="dataTable" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>UID</th>
+            <th>Nombre</th>
+            <th>Fecha</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
 
-const dia = String(fecha.getDate()).padStart(2, '0');
-const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-const hora = String(fecha.getHours()).padStart(2, '0');
-const minuto = String(fecha.getMinutes()).padStart(2, '0');
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-const formatoFinal = `${dia}/${mes} - ${hora}:${minuto}`;
-document.getElementById('ultimo').innerText = formatoFinal;
+<script>
+  let tabla = null;
 
+  const mostrarLoading = (mostrar) => {
+    const loader = document.getElementById('loadingLabs');
+    if (loader) loader.style.display = mostrar ? 'block' : 'none';
+  };
+
+  const cargarLaboratorios = async () => {
+    try {
+      const res = await fetch('/api/laboratorios');
+      const labs = await res.json();
+      const sel = document.getElementById('selectorLaboratorio');
+      if (!sel) return console.error("⚠️ No se encontró el selector de laboratorio");
+
+      labs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id;
+        opt.textContent = l.nombre;
+        sel.appendChild(opt);
+      });
+
+      const savedLab = localStorage.getItem('laboratorio_id');
+      if (savedLab) {
+        sel.value = savedLab;
+        await actualizarDashboard(savedLab);
+      } else {
+        await actualizarDashboard();
+      }
+
+    } catch (err) {
+      console.error("❌ Error al cargar laboratorios:", err);
+    } finally {
+      mostrarLoading(false);
+    }
+  };
+
+  const cargarStats = async (labId) => {
+    try {
+      const res = await fetch(`/api/stats${labId ? '?laboratorio_id=' + labId : ''}`);
+      const data = await res.json();
+
+      const validos = document.getElementById('validos');
+      const invalidos = document.getElementById('invalidos');
+      const ultimo = document.getElementById('ultimo');
+
+      if (validos) validos.innerText = data.validos ?? '—';
+      if (invalidos) invalidos.innerText = data.invalidos ?? '—';
+
+      if (data.ultimo_acceso && ultimo) {
+        const fecha = new Date(data.ultimo_acceso);
+        const dia = String(fecha.getDate()).padStart(2, '0');
+        const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+        const hora = String(fecha.getHours()).padStart(2, '0');
+        const minuto = String(fecha.getMinutes()).padStart(2, '0');
+        ultimo.innerText = `${dia}/${mes} - ${hora}:${minuto}`;
+      } else if (ultimo) {
+        ultimo.innerText = '—';
+      }
+    } catch (err) {
+      console.error("❌ Error al cargar stats:", err);
+    }
+  };
+
+  const cargarLogs = async (labId) => {
+    try {
+      const res = await fetch(`/api/logs?desde=2020-01-01&hasta=2099-12-31${labId ? '&laboratorio_id=' + labId : ''}`);
+      const data = await res.json();
+      const tbody = document.getElementById('log-body');
+      tbody.innerHTML = '';
+      data.forEach(l => {
+        const fila = `<tr>
+          <td>${l.id}</td>
+          <td>${l.uid}</td>
+          <td>${l.nombre}</td>
+          <td>${l.fecha_hora}</td>
+          <td>${l.estado}</td>
+        </tr>`;
+        tbody.innerHTML += fila;
+      });
+      if (tabla) tabla.destroy();
+      tabla = $('#dataTable').DataTable();
+    } catch (err) {
+      console.error("❌ Error al cargar logs:", err);
+    }
+  };
+
+  const actualizarDashboard = async (labId) => {
+    mostrarLoading(true);
+    await Promise.all([
+      cargarStats(labId),
+      cargarLogs(labId)
+    ]);
+    mostrarLoading(false);
+  };
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    await cargarLaboratorios();
+
+    const selector = document.getElementById('selectorLaboratorio');
+    if (selector) {
+      selector.addEventListener('change', async (e) => {
+        const labId = e.target.value;
+        if (labId) {
+          localStorage.setItem('laboratorio_id', labId);
+          location.reload();
+        } else {
+          localStorage.removeItem('laboratorio_id');
+          location.reload();  
+        }
+        await actualizarDashboard(labId);
+      });
+    }
+
+    document.getElementById('btnManual').addEventListener('click', async () => {
+      const labId = document.getElementById('selectorLaboratorio').value || 1;
+
+      Swal.fire({
+        title: '¿Abrir cerradura?',
+        text: 'Esto se registrará como apertura manual',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, abrir',
+        cancelButtonText: 'Cancelar'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          try {
+            const res = await fetch('/abrir_manual', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ laboratorio_id: labId })
             });
-
-        fetch('/api/logs?desde=2020-01-01&hasta=2099-12-31')
-            .then(res => res.json())
-            .then(data => {
-                let html = '';
-                data.forEach(l => {
-                    html += `<tr>
-                        <td>${l.id}</td>
-                        <td>${l.uid}</td>
-                        <td>${l.nombre}</td>
-                        <td>${l.fecha_hora}</td>
-                        <td>${l.estado}</td>
-                    </tr>`;
-                });
-                document.getElementById('log-body').innerHTML = html;
-                $('#dataTable').DataTable();
-            });
-    </script>
-    <script src="/static/js/script.js"></script>
-</body>
-</html>
+            const data = await res.json();
+            if (data.status === 'ok') {
+              Swal.fire('✔️ Listo', data.message, 'success');
+              await actualizarDashboard(labId);
+            } else {
+              Swal.fire('❌ Error', data.message, 'error');
+            }
+          } catch (err) {
+            Swal.fire('❌ Error', 'No se pudo abrir la cerradura', 'error');
+            console.error(err);
+          }
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}
