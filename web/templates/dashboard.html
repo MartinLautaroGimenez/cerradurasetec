@@ -1,237 +1,1198 @@
-{% extends "base.html" %}
-
-{% block title %}Cerraduras RFID | Dashboard{% endblock %}
-{% block header %}Panel de Control{% endblock %}
-
-{% block extra_head %}
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-{% endblock %}
-
-{% block content %}
-<div class="overview-boxes">
-  <!-- Selector de laboratorio -->
-  <div class="box">
-    <div class="right-side">
-      <div class="box-topic">Seleccionar laboratorio</div>
-      <select id="selectorLaboratorio" class="form-select mt-2" style="
-        background: rgba(255,255,255,0.9);
-        border-radius: 8px;
-        padding: 6px 12px;
-        border: 1px solid #ccc;
-        width: 100%;
-        font-weight: 500;
-        transition: box-shadow 0.3s ease;
-      ">
-        <option value="">Todos los laboratorios</option>
-      </select>
-      <div id="loadingLabs" style="display:none; font-size: 12px; color: #888; margin-top: 4px;">Cargando datos...</div>
-
-    </div>
-    <i class="bx bx-building-house cart"></i>
-  </div>
-
-  <!-- Tarjeta: Accesos correctos -->
-  <div class="box">
-    <div class="right-side">
-      <div class="box-topic">Accesos correctos</div>
-      <div class="number" id="validos">—</div>
-    </div>
-    <i class="bx bx-check cart two"></i>
-  </div>
-
-  <!-- Tarjeta: Accesos incorrectos -->
-  <div class="box">
-    <div class="right-side">
-      <div class="box-topic">Accesos incorrectos</div>
-      <div class="number" id="invalidos">—</div>
-    </div>
-    <i class="bx bx-block cart three"></i>
-  </div>
-
-  <!-- Tarjeta: Último acceso -->
-  <div class="box">
-    <div class="right-side">
-      <div class="box-topic">Último acceso</div>
-      <div class="number" id="ultimo">—</div>
-    </div>
-    <i class="bx bx-time cart four"></i>
-  </div>
-</div>
-
-<!-- Tabla de Logs -->
-<div class="sales-boxes">
-  <div class="recent-sales box">
-    <div class="title">Logs de Accesos</div>
-    <div class="table-responsive">
-      <table id="dataTable" class="display" style="width:100%">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>UID</th>
-            <th>Nombre</th>
-            <th>Fecha</th>
-            <th>Estado</th>
-          </tr>
-        </thead>
-        <tbody id="log-body"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script src="https://code.jquery.com/jquery-3.5.1.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script src="../static/js/script.js"></script>
-
-<script>
-  let tabla = null;
-
-  const mostrarLoading = (mostrar) => {
-    const loader = document.getElementById('loadingLabs');
-    if (loader) loader.style.display = mostrar ? 'block' : 'none';
-  };
-
-  const cargarLaboratorios = async () => {
-    try {
-      const res = await fetch('/api/laboratorios');
-      const labs = await res.json();
-      const sel = document.getElementById('selectorLaboratorio');
-      if (!sel) return console.error("⚠️ No se encontró el selector de laboratorio");
-
-      labs.forEach(l => {
-        const opt = document.createElement('option');
-        opt.value = l.id;
-        opt.textContent = l.nombre;
-        sel.appendChild(opt);
-      });
-
-      const savedLab = localStorage.getItem('laboratorio_id');
-      if (savedLab) {
-        sel.value = savedLab;
-        await actualizarDashboard(savedLab);
-      } else {
-        await actualizarDashboard();
-      }
-
-    } catch (err) {
-      console.error("❌ Error al cargar laboratorios:", err);
-    } finally {
-      mostrarLoading(false);
-    }
-  };
-
-  const cargarStats = async (labId) => {
-    try {
-      const res = await fetch(`/api/stats${labId ? '?laboratorio_id=' + labId : ''}`);
-      const data = await res.json();
-
-      const validos = document.getElementById('validos');
-      const invalidos = document.getElementById('invalidos');
-      const ultimo = document.getElementById('ultimo');
-
-      if (validos) validos.innerText = data.validos ?? '—';
-      if (invalidos) invalidos.innerText = data.invalidos ?? '—';
-
-      if (data.ultimo_acceso && ultimo) {
-        const fecha = new Date(data.ultimo_acceso);
-        const dia = String(fecha.getDate()).padStart(2, '0');
-        const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-        const hora = String(fecha.getHours()).padStart(2, '0');
-        const minuto = String(fecha.getMinutes()).padStart(2, '0');
-        ultimo.innerText = `${dia}/${mes} - ${hora}:${minuto}`;
-      } else if (ultimo) {
-        ultimo.innerText = '—';
-      }
-    } catch (err) {
-      console.error("❌ Error al cargar stats:", err);
-    }
-  };
-
-  const cargarLogs = async (labId) => {
-    try {
-      const res = await fetch(`/api/logs?desde=2020-01-01&hasta=2099-12-31${labId ? '&laboratorio_id=' + labId : ''}`);
-      const data = await res.json();
-      const tbody = document.getElementById('log-body');
-      tbody.innerHTML = '';
-      data.forEach(l => {
-        const fila = `<tr>
-          <td>${l.id}</td>
-          <td>${l.uid}</td>
-          <td>${l.nombre}</td>
-          <td>${l.fecha_hora}</td>
-          <td>${l.estado}</td>
-        </tr>`;
-        tbody.innerHTML += fila;
-      });
-      if (tabla) tabla.destroy();
-      tabla = $('#dataTable').DataTable();
-    } catch (err) {
-      console.error("❌ Error al cargar logs:", err);
-    }
-  };
-
-  const actualizarDashboard = async (labId) => {
-    mostrarLoading(true);
-    await Promise.all([
-      cargarStats(labId),
-      cargarLogs(labId)
-    ]);
-    mostrarLoading(false);
-  };
-
-  document.addEventListener('DOMContentLoaded', async () => {
-    await cargarLaboratorios();
-
-    const selector = document.getElementById('selectorLaboratorio');
-    if (selector) {
-      selector.addEventListener('change', async (e) => {
-        const labId = e.target.value;
-        if (labId) {
-          localStorage.setItem('laboratorio_id', labId);
-          location.reload();
-        } else {
-          localStorage.removeItem('laboratorio_id');
-          location.reload();  
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - ETec Cerraduras Inteligentes</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome para íconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
         }
-        await actualizarDashboard(labId);
-      });
-    }
+        .header-bar {
+            background-color: #1a202c; /* Dark gray for header */
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .container-main {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+        }
+        .btn-action {
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn-green { background-color: #10b981; color: white; }
+        .btn-green:hover { background-color: #059669; transform: translateY(-1px); }
+        .btn-blue { background-color: #3b82f6; color: white; }
+        .btn-blue:hover { background-color: #2563eb; transform: translateY(-1px); }
+        .btn-red { background-color: #ef4444; color: white; }
+        .btn-red:hover { background-color: #dc2626; transform: translateY(-1px); }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #9ca3af;
+            color: #4b5563;
+        }
+        .btn-outline:hover { background-color: #e5e7eb; }
+        /* DataTables will handle table styling, but keep some base styles */
+        table.dataTable {
+            width: 100%;
+            border-collapse: collapse; /* DataTables default */
+        }
+        table.dataTable thead th {
+            text-align: left;
+            padding: 1rem;
+            background-color: #f9fafb;
+            font-weight: 600;
+            color: #4b5563;
+            text-transform: uppercase;
+            font-size: 0.875rem;
+            border-bottom: 1px solid #e5e7eb; /* Keep a subtle border */
+        }
+        table.dataTable tbody td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid #e5e7eb; /* Keep a subtle border */
+        }
+        table.dataTable tbody tr:last-child td {
+            border-bottom: none;
+        }
 
-    document.getElementById('btnManual').addEventListener('click', async () => {
-      const labId = document.getElementById('selectorLaboratorio').value || 1;
+        /* === Modales === */
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: none;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.open {
+            display: flex;
+        }
+        .modal-content {
+            background-color: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+            width: 90%;
+            max-width: 500px;
+        }
 
-      Swal.fire({
-        title: '¿Abrir cerradura?',
-        text: 'Esto se registrará como apertura manual',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Sí, abrir',
-        cancelButtonText: 'Cancelar'
-      }).then(async (result) => {
-        if (result.isConfirmed) {
-          try {
-            const res = await fetch('/abrir_manual', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ laboratorio_id: labId })
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-              Swal.fire('✔️ Listo', data.message, 'success');
-              await actualizarDashboard(labId);
+        .input-text {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            width: 100%;
+        }
+        /* Estilos para mensajes flash */
+        .flash-message {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
+        .flash-success { background-color: #d1fae5; color: #065f46; }
+        .flash-error { background-color: #fee2e2; color: #991b1b; }
+        .flash-warning { background-color: #fffbeb; color: #92400e; }
+        .flash-info { background-color: #dbeafe; color: #1e40af; }
+    </style>
+</head>
+<body>
+    <header class="header-bar">
+        <img src="{{ url_for('static', filename='assets/logo.png') }}" alt="Logo ETec" class="h-10 mr-4" style="background-color: #d1d5db; padding: 3px; border-radius: 10px; height: 50px;">
+        <h1 class="text-2xl font-bold">ETec Cerraduras Inteligentes</h1>
+        <nav>
+            <a href="/logout" class="btn-action btn-outline">Cerrar Sesión</a>
+        </nav>
+    </header>
+
+    <main class="container-main">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Dashboard</h2>
+
+        <!-- Mensajes Flash -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Gestión de Laboratorios -->
+        <section class="mb-8 card">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-semibold text-gray-800">Gestión de Laboratorios</h3>
+                <button id="addLabBtn" class="btn-action btn-blue flex items-center">
+                    <i class="fas fa-plus mr-2"></i> Nuevo Laboratorio
+                </button>
+            </div>
+            <table id="laboratoriosTable" class="min-w-full display">
+                <thead>
+                    <tr>
+                        <th class="py-3 px-4">ID</th>
+                        <th class="py-3 px-4">Nombre</th>
+                        <th class="py-3 px-4">Topic MQTT</th>
+                        <th class="py-3 px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- DataTables will populate this tbody -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Control de Cerraduras -->
+        <section class="mb-8 card">
+            <h3 class="text-2xl font-semibold text-gray-800 mb-4">Control de Cerraduras</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="lockControlCards"></div>
+        </section>
+
+        <!-- Gestión de Usuarios RFID -->
+        <section class="mb-8 card">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-semibold text-gray-800">Gestión de Usuarios RFID</h3>
+                <button id="addRfidUserBtn" class="btn-action btn-blue flex items-center">
+                    <i class="fas fa-user-plus mr-2"></i> Nuevo Usuario RFID
+                </button>
+            </div>
+            <table id="rfidUsersTable" class="min-w-full display">
+                <thead>
+                    <tr>
+                        <th class="py-3 px-4">ID</th>
+                        <th class="py-3 px-4">UUID</th>
+                        <th class="py-3 px-4">Nombre</th>
+                        <th class="py-3 px-4">Autorizado</th>
+                        <th class="py-3 px-4">Horario</th>
+                        <th class="py-3 px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- DataTables will populate this tbody -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Gestión de Administradores (Nuevo) -->
+        <section class="mb-8 card">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-semibold text-gray-800">Gestión de Administradores</h3>
+                <button id="addAdminBtn" class="btn-action btn-blue flex items-center">
+                    <i class="fas fa-user-shield mr-2"></i> Nuevo Administrador
+                </button>
+            </div>
+            <table id="adminsTable" class="min-w-full display">
+                <thead>
+                    <tr>
+                        <th class="py-3 px-4">ID</th>
+                        <th class="py-3 px-4">Usuario</th>
+                        <th class="py-3 px-4">Rol</th>
+                        <th class="py-3 px-4">Creado En</th>
+                        <th class="py-3 px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- DataTables will populate this tbody -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Registros de Acceso -->
+        <section class="mb-8 card">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-semibold text-gray-800">Registros de Acceso</h3>
+                <div class="flex gap-2">
+                    <button id="exportLogsBtn" class="btn-action btn-outline flex items-center">
+                        <i class="fas fa-download mr-2"></i> Exportar CSV
+                    </button>
+                    <button id="generatePdfReportBtn" class="btn-action btn-outline flex items-center">
+                        <i class="fas fa-file-pdf mr-2"></i> Generar PDF
+                    </button>
+                </div>
+            </div>
+            <div class="flex flex-col md:flex-row gap-4 mb-4">
+                <input type="date" id="logDateFrom" class="input-text flex-1" placeholder="Fecha desde">
+                <input type="date" id="logDateTo" class="input-text flex-1" placeholder="Fecha hasta">
+                <select id="logLabFilter" class="input-text flex-1">
+                    <option value="">Todos los Laboratorios</option>
+                </select>
+                <select id="logTypeFilter" class="input-text flex-1">
+                    <option value="">Todos los Tipos</option>
+                    <option value="apertura_manual_admin">Apertura Manual Admin</option>
+                    <option value="rfid">Acceso RFID</option>
+                    <option value="rfid_incorrecto">RFID Incorrecto</option>
+                </select>
+                <select id="logResultFilter" class="input-text flex-1">
+                    <option value="">Todos los Resultados</option>
+                    <option value="Autorizado">Exitoso</option>
+                    <option value="Denegado">Fallido</option>
+                    <option value="Denegado - Fuera de horario">Fuera de horario</option>
+                    <option value="Denegado - No autorizado en DB">No autorizado</option>
+                </select>
+                <button id="filterLogsBtn" class="btn-action btn-blue flex-shrink-0">Filtrar</button>
+            </div>
+            <table id="logsTable" class="min-w-full display">
+                <thead>
+                    <tr>
+                        <th class="py-3 px-4">Fecha y Hora</th>
+                        <th class="py-3 px-4">Laboratorio</th>
+                        <th class="py-3 px-4">Tipo Acceso</th>
+                        <th class="py-3 px-4">Usuario/UUID</th>
+                        <th class="py-3 px-4">Resultado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- DataTables will populate this tbody -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Estadísticas -->
+        <section class="mb-8 card">
+            <h3 class="text-2xl font-semibold text-gray-800 mb-4">Estadísticas de Acceso</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="statsDisplay">
+                <div class="bg-blue-50 p-4 rounded-lg shadow-sm">
+                    <h4 class="font-semibold text-lg text-blue-800 mb-2">Total Accesos</h4>
+                    <p id="totalAccesses" class="text-4xl font-bold text-blue-600">0</p>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg shadow-sm">
+                    <h4 class="font-semibold text-lg text-green-800 mb-2">Accesos por Laboratorio</h4>
+                    <ul id="accessesByLab" class="list-disc list-inside text-gray-700"></ul>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg shadow-sm">
+                    <h4 class="font-semibold text-lg text-purple-800 mb-2">Accesos por Día</h4>
+                    <ul id="accessesByDay" class="list-disc list-inside text-gray-700"></ul>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg shadow-sm">
+                    <h4 class="font-semibold text-lg text-yellow-800 mb-2">Accesos por Hora</h4>
+                    <ul id="accessesByHour" class="list-disc list-inside text-gray-700"></ul>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg shadow-sm">
+                    <h4 class="font-semibold text-lg text-red-800 mb-2">Accesos por Tipo</h4>
+                    <ul id="accessesByType" class="list-disc list-inside text-gray-700"></ul>
+                </div>
+                <div class="bg-indigo-50 p-4 rounded-lg shadow-sm">
+                    <h4 class="font-semibold text-lg text-indigo-800 mb-2">Accesos por Resultado</h4>
+                    <ul id="accessesByResult" class="list-disc list-inside text-gray-700"></ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Modal Agregar/Editar Laboratorio -->
+        <div id="labModal" class="modal">
+            <div class="modal-content">
+                <h3 id="modalTitle" class="text-2xl font-bold text-gray-800 mb-6">Nuevo Laboratorio</h3>
+                <form id="labForm">
+           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" id="labId">
+                    <div class="mb-4">
+                        <label for="labName" class="block text-gray-700 text-sm font-semibold mb-2">Nombre del Laboratorio</label>
+                        <input type="text" id="labName" class="input-text" required maxlength="100">
+                    </div>
+                    <div class="mb-6">
+                        <label for="labTopic" class="block text-gray-700 text-sm font-semibold mb-2">Topic MQTT (ej. lab_quimica_1)</label>
+                        <input type="text" id="labTopic" class="input-text" required maxlength="50">
+                    </div>
+                    <div class="flex justify-end gap-4">
+                        <button type="button" id="cancelLabBtn" class="btn-action btn-outline">Cancelar</button>
+                        <button type="submit" class="btn-action btn-blue">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modal Agregar/Editar Usuario RFID -->
+        <div id="rfidUserModal" class="modal">
+            <div class="modal-content">
+                <h3 id="rfidModalTitle" class="text-2xl font-bold text-gray-800 mb-6">Nuevo Usuario RFID</h3>
+                <form id="rfidUserForm">
+           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" id="rfidUserId">
+                    <div class="mb-4">
+                        <label for="rfidUuid" class="block text-gray-700 text-sm font-semibold mb-2">UUID (ej. ABCD-1234-EFGH-5678)</label>
+                        <div class="flex items-center gap-2"> <!-- Added flex container for input and button -->
+                            <input type="text" id="rfidUuid" class="input-text flex-grow" required maxlength="14" pattern="^([0-9a-fA-F]{2}-){3}[0-9a-fA-F]{2}$" title="Debe ser en formato XX-XX-XX-XX, donde X es un carácter hexadecimal.">
+                            <button type="button" id="scanUuidBtn" class="btn-action btn-outline p-2">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="rfidName" class="block text-gray-700 text-sm font-semibold mb-2">Nombre de la Persona</label>
+                        <input type="text" id="rfidName" class="input-text" required maxlength="100">
+                    </div>
+                    <div class="mb-4 flex items-center">
+                        <input type="checkbox" id="rfidAuthorized" class="mr-2">
+                        <label for="rfidAuthorized" class="text-gray-700 text-sm font-semibold">Autorizado</label>
+                    </div>
+                    <div class="mb-4">
+                        <label for="rfidHourFrom" class="block text-gray-700 text-sm font-semibold mb-2">Hora Desde (opcional)</label>
+                        <input type="time" id="rfidHourFrom" class="input-text">
+                    </div>
+                    <div class="mb-6">
+                        <label for="rfidHourTo" class="block text-gray-700 text-sm font-semibold mb-2">Hora Hasta (opcional)</label>
+                        <input type="time" id="rfidHourTo" class="input-text">
+                    </div>
+                    <div class="flex justify-end gap-4">
+                        <button type="button" id="cancelRfidUserBtn" class="btn-action btn-outline">Cancelar</button>
+                        <button type="submit" class="btn-action btn-blue">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modal Agregar/Editar Administrador (Nuevo) -->
+        <div id="adminModal" class="modal">
+            <div class="modal-content">
+                <h3 id="adminModalTitle" class="text-2xl font-bold text-gray-800 mb-6">Nuevo Administrador</h3>
+                <form id="adminForm">
+           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" id="adminId">
+                    <div class="mb-4">
+                        <label for="adminUsername" class="block text-gray-700 text-sm font-semibold mb-2">Usuario</label>
+                        <input type="text" id="adminUsername" class="input-text" required maxlength="50">
+                    </div>
+                    <div class="mb-4">
+                        <label for="adminPassword" class="block text-gray-700 text-sm font-semibold mb-2">Contraseña (dejar vacío para no cambiar)</label>
+                        <input type="password" id="adminPassword" class="input-text" minlength="8">
+                    </div>
+                    <div class="mb-6">
+                        <label for="adminRole" class="block text-gray-700 text-sm font-semibold mb-2">Rol</label>
+                        <select id="adminRole" class="input-text" required>
+                            <option value="admin">Administrador</option>
+                            <option value="super_admin">Super Administrador</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end gap-4">
+                        <button type="button" id="cancelAdminBtn" class="btn-action btn-outline">Cancelar</button>
+                        <button type="submit" class="btn-action btn-blue">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+
+        <!-- Modal Mensajes/Confirmaciones -->
+        <div id="messageModal" class="modal">
+            <div class="modal-content text-center">
+                <h3 id="messageModalTitle" class="text-xl font-bold text-gray-800 mb-4"></h3>
+                <p id="messageModalBody" class="text-gray-700 mb-6"></p>
+                <div class="flex justify-center gap-4">
+                    <button type="button" id="messageModalConfirmBtn" class="btn-action btn-blue hidden">Confirmar</button>
+                    <button type="button" id="messageModalCancelBtn" class="btn-action btn-outline">Cerrar</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- jQuery (required for DataTables) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- DataTables JS -->
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+
+    <script>
+        // Refs DOM
+        // const laboratoriosTableBody = document.getElementById('laboratoriosTableBody'); // No longer directly used
+        const laboratoriosTable = $('#laboratoriosTable'); // jQuery reference for DataTables
+        const lockControlCards    = document.getElementById('lockControlCards');
+        // const logsTableBody       = document.getElementById('logsTableBody'); // No longer directly used
+        const logsTable = $('#logsTable'); // jQuery reference for DataTables
+        // const rfidUsersTableBody  = document.getElementById('rfidUsersTableBody'); // No longer directly used
+        const rfidUsersTable = $('#rfidUsersTable'); // jQuery reference for DataTables
+        // const adminsTableBody     = document.getElementById('adminsTableBody'); // No longer directly used
+        const adminsTable = $('#adminsTable'); // jQuery reference for DataTables
+
+        const totalAccesses       = document.getElementById('totalAccesses');
+        const accessesByLab       = document.getElementById('accessesByLab');
+        const accessesByDay       = document.getElementById('accessesByDay');
+        const accessesByHour      = document.getElementById('accessesByHour');
+        const accessesByType      = document.getElementById('accessesByType');
+        const accessesByResult    = document.getElementById('accessesByResult');
+        const addLabBtn           = document.getElementById('addLabBtn');
+        const labModal            = document.getElementById('labModal');
+        const modalTitle          = document.getElementById('modalTitle');
+        const labForm             = document.getElementById('labForm');
+        const labId               = document.getElementById('labId');
+        const labName             = document.getElementById('labName');
+        const labTopic            = document.getElementById('labTopic');
+        const cancelLabBtn        = document.getElementById('cancelLabBtn');
+        const exportLogsBtn       = document.getElementById('exportLogsBtn');
+        const generatePdfReportBtn= document.getElementById('generatePdfReportBtn');
+        const logDateFrom         = document.getElementById('logDateFrom');
+        const logDateTo           = document.getElementById('logDateTo');
+        const logLabFilter        = document.getElementById('logLabFilter');
+        const logTypeFilter       = document.getElementById('logTypeFilter');
+        const logResultFilter     = document.getElementById('logResultFilter');
+        const filterLogsBtn       = document.getElementById('filterLogsBtn');
+
+        const addRfidUserBtn      = document.getElementById('addRfidUserBtn');
+        const rfidUserModal       = document.getElementById('rfidUserModal');
+        const rfidModalTitle      = document.getElementById('rfidModalTitle');
+        const rfidUserForm        = document.getElementById('rfidUserForm');
+        const rfidUserId          = document.getElementById('rfidUserId');
+        const rfidUuid            = document.getElementById('rfidUuid');
+        const rfidName            = document.getElementById('rfidName');
+        const rfidAuthorized      = document.getElementById('rfidAuthorized');
+        const rfidHourFrom        = document.getElementById('rfidHourFrom');
+        const rfidHourTo          = document.getElementById('rfidHourTo');
+        const cancelRfidUserBtn   = document.getElementById('cancelRfidUserBtn');
+        const scanUuidBtn         = document.getElementById('scanUuidBtn'); // New DOM ref
+
+        const addAdminBtn         = document.getElementById('addAdminBtn');
+        const adminModal          = document.getElementById('adminModal');
+        const adminModalTitle     = document.getElementById('adminModalTitle');
+        const adminForm           = document.getElementById('adminForm');
+        const adminId             = document.getElementById('adminId');
+        const adminUsername       = document.getElementById('adminUsername');
+        const adminPassword       = document.getElementById('adminPassword');
+        const adminRole           = document.getElementById('adminRole'); // New DOM ref for role
+        const cancelAdminBtn      = document.getElementById('cancelAdminBtn');
+
+        const messageModal        = document.getElementById('messageModal');
+        const messageModalTitle   = document.getElementById('messageModalTitle');
+        const messageModalBody    = document.getElementById('messageModalBody');
+        const messageModalConfirmBtn = document.getElementById('messageModalConfirmBtn');
+        const messageModalCancelBtn  = document.getElementById('messageModalCancelBtn');
+
+        // DataTables instances
+        let laboratoriosDataTable;
+        let rfidUsersDataTable;
+        let adminsDataTable;
+        let logsDataTable;
+
+        // --- Funciones Auxiliares para Modales y Renderizado ---
+
+        function showMessageModal(title, body, isConfirm = false, onConfirm = null) {
+            // Aseguro que los modales de edición/creación estén cerrados antes de mostrar el de mensajes
+            labModal.classList.remove('open');
+            rfidUserModal.classList.remove('open'); // Ensure this is also closed
+            adminModal.classList.remove('open');
+            messageModal.classList.remove('open'); // Ocultar por si ya estaba abierto
+
+            messageModalTitle.textContent = title;
+            messageModalBody.textContent  = body;
+            messageModalConfirmBtn.classList.toggle('hidden', !isConfirm);
+            messageModalCancelBtn.textContent = isConfirm ? 'Cancelar' : 'Cerrar';
+
+            if (isConfirm) {
+                messageModalConfirmBtn.onclick = () => {
+                    onConfirm?.();
+                    messageModal.classList.remove('open');
+                };
             } else {
-              Swal.fire('❌ Error', data.message, 'error');
+                // Limpiar el onclick si no es de confirmación
+                messageModalConfirmBtn.onclick = null;
             }
-          } catch (err) {
-            Swal.fire('❌ Error', 'No se pudo abrir la cerradura', 'error');
-            console.error(err);
-          }
+            messageModal.classList.add('open');
         }
-      });
-    });
-  });
-</script>
-{% endblock %}
+
+        function openLabModal(id = '', name = '', topic = '') {
+            labId.value         = id;
+            labName.value       = name;
+            labTopic.value      = topic;
+            modalTitle.textContent = id ? 'Editar Laboratorio' : 'Nuevo Laboratorio';
+            labModal.classList.add('open');
+        }
+
+        function openRfidUserModal(id = '', uuid = '', name = '', authorized = true, hourFrom = '', hourTo = '') {
+            rfidUserId.value          = id;
+            rfidUuid.value            = uuid; // Set the UUID passed (empty for new, existing for edit)
+            rfidName.value            = name;
+            rfidAuthorized.checked    = authorized;
+            rfidHourFrom.value        = hourFrom;
+            rfidHourTo.value          = hourTo;
+            rfidModalTitle.textContent = id ? 'Editar Usuario RFID' : 'Nuevo Usuario RFID';
+            rfidUserModal.classList.add('open');
+            stopUuidScan(); // Ensure any previous scan is stopped when opening the modal
+            // If it's a new user, clear the UUID field explicitly
+            if (!id) {
+                rfidUuid.value = '';
+            }
+        }
+
+        function openAdminModal(id = '', username = '', role = 'admin') {
+            adminId.value = id;
+            adminUsername.value = username;
+            adminPassword.value = ''; // Siempre limpiar la contraseña al abrir
+            adminRole.value = role; // Set the role
+            adminModalTitle.textContent = id ? 'Editar Administrador' : 'Nuevo Administrador';
+            adminModal.classList.add('open');
+        }
+
+        function renderLaboratoriosTable(labs) {
+            // Destroy existing DataTable instance if it exists
+            if ($.fn.DataTable.isDataTable('#laboratoriosTable')) {
+                laboratoriosDataTable.destroy();
+            }
+
+            laboratoriosDataTable = laboratoriosTable.DataTable({
+                data: labs,
+                columns: [
+                    { data: 'id' },
+                    { data: 'nombre' },
+                    { data: 'topic_mqtt' },
+                    {
+                        data: null, // This column is not directly mapped to a data property
+                        render: function (data, type, row) {
+                            return `
+                                <button class="btn-action btn-outline text-sm edit-lab-btn"
+                                        data-id="${row.id}" data-name="${row.nombre}" data-topic="${row.topic_mqtt}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn-action btn-red text-sm delete-lab-btn" data-id="${row.id}">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>`;
+                        },
+                        orderable: false, // Actions column should not be sortable
+                        searchable: false // Actions column should not be searchable
+                    }
+                ],
+                // Language settings for Spanish
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.11.5/i18n/es_es.json'
+                },
+                // Re-attach event listeners after each draw
+                drawCallback: function() {
+                    document.querySelectorAll('.edit-lab-btn')
+                        .forEach(btn => btn.onclick = () => openLabModal(btn.dataset.id, btn.dataset.name, btn.dataset.topic));
+                    document.querySelectorAll('.delete-lab-btn')
+                        .forEach(btn => btn.onclick = () => showMessageModal(
+                            'Confirmar eliminación',
+                            '¿Seguro que quieres eliminar este laboratorio?',
+                            true,
+                            () => deleteLaboratorio(btn.dataset.id)
+                        ));
+                }
+            });
+        }
+
+        function renderLockControlCards(labs) {
+            lockControlCards.innerHTML = labs.length
+                ? labs.map(l=>`
+                    <div class="card flex flex-col items-center justify-between">
+                        <h4 class="text-xl font-semibold text-gray-700 mb-4 text-center">${l.nombre}</h4>
+                        <div class="flex gap-4">
+                            <button class="btn-action btn-green unlock-btn" data-id="${l.id}">
+                                <i class="fas fa-lock-open mr-2"></i>Abrir
+                            </button>
+                        </div>
+                    </div>` ).join('')
+                : `<p class="text-center text-gray-500 col-span-full">No hay cerraduras para controlar.</p>`;
+            document.querySelectorAll('.unlock-btn')
+                .forEach(b=>b.onclick=()=>toggleLock(b.dataset.id,'unlock'));
+        }
+
+        function populateLabFilter(laboratorios) {
+            logLabFilter.innerHTML = '<option value="">Todos los Laboratorios</option>';
+            laboratorios.forEach(lab => {
+                const option = document.createElement('option');
+                option.value = lab.id;
+                option.textContent = lab.nombre;
+                logLabFilter.appendChild(option);
+            });
+        }
+
+        function renderRfidUsersTable(users) {
+            if ($.fn.DataTable.isDataTable('#rfidUsersTable')) {
+                rfidUsersDataTable.destroy();
+            }
+
+            rfidUsersDataTable = rfidUsersTable.DataTable({
+                data: users,
+                columns: [
+                    { data: 'id' },
+                    { data: 'uuid' },
+                    { data: 'nombre_persona' },
+                    {
+                        data: 'autorizado',
+                        render: function (data, type, row) {
+                            return data ? '<i class="fas fa-check-circle text-green-500"></i> Sí' : '<i class="fas fa-times-circle text-red-500"></i> No';
+                        }
+                    },
+                    {
+                        data: null,
+                        render: function (data, type, row) {
+                            return `${row.hora_desde || 'N/A'} - ${row.hora_hasta || 'N/A'}`;
+                        }
+                    },
+                    {
+                        data: null,
+                        render: function (data, type, row) {
+                            return `
+                                <button class="btn-action btn-outline text-sm edit-rfid-btn"
+                                        data-id="${row.id}" data-uuid="${row.uuid}" data-name="${row.nombre_persona}"
+                                        data-authorized="${row.autorizado}" data-hour-from="${row.hora_desde || ''}" data-hour-to="${row.hora_hasta || ''}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn-action btn-red text-sm delete-rfid-btn" data-id="${row.id}">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>`;
+                        },
+                        orderable: false,
+                        searchable: false
+                    }
+                ],
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.11.5/i18n/es_es.json'
+                },
+                drawCallback: function() {
+                    document.querySelectorAll('.edit-rfid-btn').forEach(btn => {
+                        btn.onclick = () => openRfidUserModal(
+                            btn.dataset.id,
+                            btn.dataset.uuid,
+                            btn.dataset.name,
+                            btn.dataset.authorized === 'true',
+                            btn.dataset.hourFrom,
+                            btn.dataset.hourTo
+                        );
+                    });
+                    document.querySelectorAll('.delete-rfid-btn').forEach(btn => {
+                        btn.onclick = () => showMessageModal(
+                            'Confirmar eliminación',
+                            '¿Seguro que quieres eliminar este usuario RFID?',
+                            true,
+                            () => deleteRfidUser(btn.dataset.id)
+                        );
+                    });
+                }
+            });
+        }
+
+        function renderAdminsTable(admins) {
+            if ($.fn.DataTable.isDataTable('#adminsTable')) {
+                adminsDataTable.destroy();
+            }
+
+            adminsDataTable = adminsTable.DataTable({
+                data: admins,
+                columns: [
+                    { data: 'id' },
+                    { data: 'username' },
+                    { data: 'role', defaultContent: 'N/A' }, // Handle potential null/undefined role
+                    {
+                        data: 'creado_en',
+                        render: function (data, type, row) {
+                            return new Date(data).toLocaleString('es-AR');
+                        }
+                    },
+                    {
+                        data: null,
+                        render: function (data, type, row) {
+                            return `
+                                <button class="btn-action btn-outline text-sm edit-admin-btn"
+                                        data-id="${row.id}" data-username="${row.username}" data-role="${row.role || 'admin'}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn-action btn-red text-sm delete-admin-btn" data-id="${row.id}">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>`;
+                        },
+                        orderable: false,
+                        searchable: false
+                    }
+                ],
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.11.5/i18n/es_es.json'
+                },
+                drawCallback: function() {
+                    document.querySelectorAll('.edit-admin-btn').forEach(btn => {
+                        btn.onclick = () => openAdminModal(btn.dataset.id, btn.dataset.username, btn.dataset.role);
+                    });
+                    document.querySelectorAll('.delete-admin-btn').forEach(btn => {
+                        btn.onclick = () => showMessageModal(
+                            'Confirmar eliminación',
+                            '¿Seguro que quieres eliminar este administrador?',
+                            true,
+                            () => deleteAdmin(btn.dataset.id)
+                        );
+                    });
+                }
+            });
+        }
+
+
+        function renderRegistrosAccesoTable(logs) {
+            if ($.fn.DataTable.isDataTable('#logsTable')) {
+                logsDataTable.destroy();
+            }
+
+            logsDataTable = logsTable.DataTable({
+                data: logs,
+                columns: [
+                    {
+                        data: 'creado_en',
+                        render: function (data, type, row) {
+                            return new Date(data).toLocaleString('es-AR');
+                        }
+                    },
+                    { data: 'laboratorio_nombre' },
+                    {
+                        data: 'tipo_acceso',
+                        render: function (data, type, row) {
+                            if (data === 'apertura_manual_admin') return 'Apertura Manual Admin';
+                            if (data === 'rfid') return 'Acceso RFID';
+                            if (data === 'rfid_incorrecto') return 'RFID Incorrecto';
+                            return data;
+                        }
+                    },
+                    {
+                        data: null,
+                        render: function (data, type, row) {
+                            let userOrUuid = '';
+                            if (row.tipo_acceso === 'apertura_manual_admin') {
+                                userOrUuid = row.usuario_admin || 'N/A';
+                            } else if (row.uuid_rfid) {
+                                userOrUuid = row.uuid_rfid;
+                                if (row.rfid_persona_nombre) {
+                                    userOrUuid += ` (${row.rfid_persona_nombre})`;
+                                }
+                            } else {
+                                userOrUuid = 'N/A';
+                            }
+                            return userOrUuid;
+                        }
+                    },
+                    {
+                        data: 'resultado',
+                        render: function (data, type, row) {
+                            if (data === 'Autorizado') return '<span class="text-green-600 font-semibold">Exitoso</span>';
+                            if (data === 'Denegado') return '<span class="text-red-600 font-semibold">Fallido</span>';
+                            if (data === 'Denegado - Fuera de horario') return '<span class="text-red-700">Fuera de horario</span>';
+                            if (data === 'Denegado - No autorizado en DB') return '<span class="text-red-700">No autorizado</span>';
+                            return `<span class="text-gray-500">${data}</span>`;
+                        }
+                    }
+                ],
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.11.5/i18n/es_es.json'
+                },
+                order: [[0, 'desc']] // Default sort by date/time descending
+            });
+        }
+
+        function renderStats(s) {
+            totalAccesses.textContent = s.total_accesos;
+
+            accessesByLab.innerHTML   = Object.entries(s.accesos_por_laboratorio ?? {})
+                                            .map(([lab, c])=>`<li>${lab}: ${c}</li>`).join('');
+            accessesByDay.innerHTML   = Object.entries(s.accesos_por_dia ?? {})
+                                            .map(([d, c])=>`<li>${d}: ${c}</li>`).join('');
+            accessesByHour.innerHTML  = Object.entries(s.accesos_por_hora ?? {})
+                                            .map(([h, c])=>`<li>${h}: ${c}</li>`).join('');
+            accessesByType.innerHTML  = Object.entries(s.accesos_por_tipo ?? {})
+                                            .map(([t, c])=>`<li>${t.charAt(0).toUpperCase()+t.slice(1)}: ${c}</li>`).join('');
+            accessesByResult.innerHTML = Object.entries(s.accesos_por_resultado ?? {})
+                                            .map(([res, c])=>`<li>${res.charAt(0).toUpperCase()+res.slice(1)}: ${c}</li>`).join('');
+        }
+
+
+        // --- Funciones de Fetching y Lógica de Negocio ---
+
+        async function fetchLaboratorios() {
+            try {
+                const resp = await fetch('/api/laboratorios');
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || "La respuesta de la API de laboratorios no fue exitosa.");
+                }
+                const labs = await resp.json();
+                renderLaboratoriosTable(labs);
+                renderLockControlCards(labs);
+                populateLabFilter(labs);
+            } catch (error) {
+                console.error('Error al cargar laboratorios:', error);
+                showMessageModal('Error','No se pudieron cargar laboratorios. ' + error.message);
+            }
+        }
+
+        async function toggleLock(id, act) {
+            try {
+                const resp = await fetch(`/api/cerraduras/${id}/${act}`,{ method:'POST' });
+                if(!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+                const { message } = await resp.json();
+                showMessageModal('Comando enviado',message);
+                fetchRegistrosAcceso();
+            } catch(err) {
+                showMessageModal('Error',`No se pudo ${act}: ${err.message}`);
+            }
+        }
+
+        async function deleteLaboratorio(id) {
+            try {
+                const resp = await fetch(`/api/laboratorios/${id}`,{ method:'DELETE' });
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+                showMessageModal('Éxito','Laboratorio eliminado.');
+                fetchLaboratorios();
+                fetchRegistrosAcceso();
+            } catch(err) {
+                showMessageModal('Error',`No se pudo eliminar: ${err.message}`);
+            }
+        }
+
+        async function fetchRfidUsers() {
+            try {
+                const resp = await fetch('/api/usuarios_rfid');
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || "La respuesta de la API de usuarios RFID no fue exitosa.");
+                }
+                renderRfidUsersTable(await resp.json());
+            } catch (error) {
+                console.error('Error al cargar usuarios RFID:', error);
+                showMessageModal('Error', 'No se pudieron cargar usuarios RFID. ' + error.message);
+            }
+        }
+
+        async function deleteRfidUser(id) {
+            try {
+                const resp = await fetch(`/api/usuarios_rfid/${id}`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+                showMessageModal('Éxito', 'Usuario RFID eliminado.');
+                fetchRfidUsers();
+            } catch (err) {
+                showMessageModal('Error', `No se pudo eliminar usuario RFID: ${err.message}`);
+            }
+        }
+
+        async function fetchAdmins() {
+            try {
+                const resp = await fetch('/api/admins');
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || "La respuesta de la API de administradores no fue exitosa.");
+                }
+                renderAdminsTable(await resp.json());
+            } catch (error) {
+                console.error('Error al cargar administradores:', error);
+                showMessageModal('Error', 'No se pudieron cargar administradores. ' + error.message);
+            }
+        }
+
+        async function deleteAdmin(id) {
+            try {
+                const resp = await fetch(`/api/admins/${id}`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+                showMessageModal('Éxito', 'Administrador eliminado.');
+                fetchAdmins();
+            } catch (err) {
+                showMessageModal('Error', `No se pudo eliminar administrador: ${err.message}`);
+            }
+        }
+
+        async function fetchRegistrosAcceso() {
+            const p = new URLSearchParams();
+            if(logDateFrom.value) p.set('desde',logDateFrom.value);
+            if(logDateTo.value)    p.set('hasta',logDateTo.value);
+            if(logLabFilter.value) p.set('laboratorio_id',logLabFilter.value);
+            if(logTypeFilter.value) p.set('tipo_acceso',logTypeFilter.value);
+            if(logResultFilter.value) p.set('resultado',logResultFilter.value);
+
+            try {
+                const resp = await fetch(`/api/registros_acceso?${p}`);
+                if(!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || "La respuesta de la API de registros no fue exitosa.");
+                }
+                renderRegistrosAccesoTable(await resp.json());
+            } catch (error) {
+                console.error('Error al cargar registros de acceso:', error);
+                showMessageModal('Error','No se cargaron registros de acceso. ' + error.message);
+            }
+        }
+
+        async function fetchStats() {
+            try {
+                const resp = await fetch('/api/stats');
+                if(!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || "La respuesta de la API de estadísticas no fue exitosa.");
+                }
+                renderStats(await resp.json());
+            } catch (error) {
+                console.error('Error al cargar estadísticas:', error);
+                showMessageModal('Error','No se cargaron estadísticas. ' + error.message);
+            }
+        }
+
+        // --- Funciones para el escaneo de UUID ---
+        let lastScannedLogId = 0;
+        let scanInterval = null; // To hold the interval ID for stopping the scan
+
+        async function startUuidScan() {
+            // Disable the scan button and UUID input, show loading
+            scanUuidBtn.disabled = true;
+            rfidUuid.disabled = true; // Disable the UUID input
+            scanUuidBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Escaneando...';
+            rfidUuid.value = 'Esperando nuevo UUID...'; // Provide feedback to the user
+
+            // Fetch the very latest log ID to start scanning from
+            try {
+                const initialResp = await fetch('/api/registros_acceso/latest_uuid');
+                if (initialResp.ok) {
+                    const data = await initialResp.json();
+                    if (data && data.id) {
+                        lastScannedLogId = data.id;
+                    } else {
+                        lastScannedLogId = 0; // If no logs, start from 0
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching initial latest UUID:", error);
+                showMessageModal('Error', 'No se pudo iniciar el escaneo. Fallo al obtener logs iniciales.');
+                stopUuidScan(); // Stop if initial fetch fails
+                return;
+            }
+
+            // Start polling
+            scanInterval = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/registros_acceso/latest_uuid?last_id=${lastScannedLogId}`);
+                    if (!resp.ok) {
+                        const errorData = await resp.json();
+                        throw new Error(errorData.error || resp.status);
+                    }
+                    const data = await resp.json();
+                    if (data && data.uuid) {
+                        // New UUID found!
+                        rfidUuid.value = data.uuid;
+                        lastScannedLogId = data.id; // Update last scanned ID
+                        showMessageModal('Éxito', `UUID capturado: ${data.uuid}`);
+                        stopUuidScan(); // Stop scanning once found
+                    }
+                } catch (error) {
+                    console.error('Error durante el escaneo de UUID:', error);
+                    showMessageModal('Error', `Fallo en el escaneo: ${error.message}`);
+                    stopUuidScan(); // Stop scanning on error
+                }
+            }, 1000); // Poll every 1 second
+
+            // Set a timeout to stop scanning after a certain period (e.g., 30 seconds)
+            setTimeout(() => {
+                if (scanInterval) { // Check if scan is still active
+                    stopUuidScan();
+                    if (rfidUuid.value === 'Esperando nuevo UUID...') { // Only show timeout if no UUID was found
+                        showMessageModal('Tiempo Agotado', 'No se detectó ninguna tarjeta RFID en 30 segundos.');
+                        rfidUuid.value = ''; // Clear the waiting message
+                    }
+                }
+            }, 30000); // 30 seconds timeout
+        }
+
+        function stopUuidScan() {
+            clearInterval(scanInterval);
+            scanInterval = null;
+            scanUuidBtn.disabled = false;
+            rfidUuid.disabled = false; // Re-enable the UUID input
+            scanUuidBtn.innerHTML = '<i class="fas fa-search"></i>'; // Reset button text/icon
+        }
+
+
+        // --- Event Listeners y Inicialización ---
+
+        // Botones de modales
+        addLabBtn.onclick = () => openLabModal();
+        cancelLabBtn.onclick = () => labModal.classList.remove('open');
+        addRfidUserBtn.onclick = () => openRfidUserModal();
+        cancelRfidUserBtn.onclick = () => {
+            rfidUserModal.classList.remove('open');
+            stopUuidScan(); // Stop scan when modal is closed
+            rfidUuid.value = ''; // Clear the UUID field
+        };
+        addAdminBtn.onclick = () => openAdminModal();
+        cancelAdminBtn.onclick = () => adminModal.classList.remove('open');
+        
+        // Modified messageModalCancelBtn to also stop scan and clear UUID field
+        messageModalCancelBtn.onclick = () => {
+            messageModal.classList.remove('open');
+            stopUuidScan(); // Stop scan when message modal is closed
+            // Only clear if it's still showing the scanning message or is empty
+            if (rfidUuid.value === 'Esperando nuevo UUID...' || rfidUuid.value === '') {
+                rfidUuid.value = '';
+            }
+        };
+
+        // Event listener for the new scan button
+        scanUuidBtn.onclick = startUuidScan;
+
+        // Envío de formularios
+        labForm.onsubmit = async e => {
+            e.preventDefault();
+            const id        = labId.value.trim();
+            const nombre    = labName.value.trim();
+            const topic_mqtt  = labTopic.value.trim();
+            if (!nombre||!topic_mqtt) {
+                showMessageModal('Error de Entrada','Nombre y Topic MQTT no pueden estar vacíos.');
+                return;
+            }
+            const method = id? 'PUT':'POST';
+            const url    = id? `/api/laboratorios/${id}`:'/api/laboratorios';
+            try {
+                const resp = await fetch(url,{
+                    method,
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ nombre, topic_mqtt })
+                });
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+                showMessageModal('Éxito',`Laboratorio ${ id?'actualizado':'creado'}!`);
+                labModal.classList.remove('open');
+                fetchLaboratorios();
+                fetchRegistrosAcceso();
+            } catch(err) {
+                showMessageModal('Error',`Algo falló: ${err.message}`);
+            }
+        };
+
+        rfidUserForm.onsubmit = async e => {
+            e.preventDefault();
+            stopUuidScan(); // Stop scan when form is submitted
+            const id              = rfidUserId.value.trim();
+            const uuid            = rfidUuid.value.trim();
+            const nombre_persona  = rfidName.value.trim();
+            const autorizado      = rfidAuthorized.checked;
+            const hora_desde      = rfidHourFrom.value || null;
+            const hora_hasta      = rfidHourTo.value || null;
+
+            if (!uuid || !nombre_persona) {
+                showMessageModal('Error de Entrada', 'UUID y Nombre de Persona no pueden estar vacíos.');
+                return;
+            }
+
+            const method = id ? 'PUT' : 'POST';
+            const url    = id ? `/api/usuarios_rfid/${id}` : '/api/usuarios_rfid';
+
+            try {
+                const resp = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uuid, nombre_persona, autorizado, hora_desde, hora_hasta })
+                });
+
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+
+                showMessageModal('Éxito', `Usuario RFID ${id ? 'actualizado' : 'creado'}!`);
+                rfidUserModal.classList.remove('open');
+                fetchRfidUsers();
+            } catch (err) {
+                showMessageModal('Error', `Algo falló al guardar usuario RFID: ${err.message}`);
+            }
+        };
+
+        adminForm.onsubmit = async e => {
+            e.preventDefault();
+            const id        = adminId.value.trim();
+            const username  = adminUsername.value.trim();
+            const password  = adminPassword.value;
+            const role      = adminRole.value; // Get the selected role
+
+            if (!username) {
+                showMessageModal('Error de Entrada', 'El nombre de usuario no puede estar vacío.');
+                return;
+            }
+            if (!id && !password) {
+                showMessageModal('Error de Entrada', 'La contraseña es obligatoria para nuevos administradores.');
+                return;
+            }
+            // Client-side password length check (server-side is also important)
+            if (password && password.length < 8) {
+                showMessageModal('Error de Entrada', 'La contraseña debe tener al menos 8 caracteres.');
+                return;
+            }
+
+            const method = id ? 'PUT' : 'POST';
+            const url    = id ? `/api/admins/${id}` : '/api/admins';
+
+            try {
+                const bodyData = { username: username, role: role }; // Include role in bodyData
+                if (password) {
+                    bodyData.password = password;
+                }
+
+                const resp = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
+                });
+
+                if (!resp.ok) {
+                    const errorData = await resp.json();
+                    throw new Error(errorData.error || resp.status);
+                }
+
+                showMessageModal('Éxito', `Administrador ${id ? 'actualizado' : 'creado'}!`);
+                adminModal.classList.remove('open');
+                fetchAdmins();
+            } catch (err) {
+                showMessageModal('Error', `Algo falló al guardar administrador: ${err.message}`);
+            }
+        };
+
+        // Filtros y exportación de logs
+        filterLogsBtn.onclick = fetchRegistrosAcceso;
+        exportLogsBtn.onclick = ()=> window.location.href='/api/registros_acceso/exportar';
+        // La función de generar PDF ahora usa los filtros de fecha
+        generatePdfReportBtn.onclick = () => {
+            const desde = logDateFrom.value;
+            const hasta = logDateTo.value;
+            let url = '/api/audit_report_pdf';
+            const params = new URLSearchParams();
+            if (desde) params.append('desde', desde);
+            if (hasta) params.append('hasta', hasta);
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+            window.open(url, '_blank');
+        };
+
+
+        // Cargar datos al cargar la página
+        document.addEventListener('DOMContentLoaded',()=>{
+            fetchLaboratorios();
+            fetchRfidUsers();
+            fetchAdmins();
+            fetchRegistrosAcceso();
+            fetchStats();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+[
+    {
+        "id": "8ba941f9ff791f60",
+        "type": "tab",
+        "label": "Flujo 2",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "0a88e997cd1511dc",
+        "type": "mqtt in",
+        "z": "8ba941f9ff791f60",
+        "name": "Recibir UUID RFID",
+        "topic": "etec/cerraduras/lab1elec/uuid",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "2ce5f49d22fbcc88",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 210,
+        "y": 120,
+        "wires": [
+            [
+                "457f4195dc11cbb0"
+            ]
+        ]
+    },
+    {
+        "id": "457f4195dc11cbb0",
+        "type": "function",
+        "z": "8ba941f9ff791f60",
+        "name": "Preparar Consulta DB",
+        "func": "const uuid = msg.payload;\n\n// Consulta para obtener todos los detalles del usuario, incluyendo nombre_persona\nmsg.topic = \"SELECT id, uuid, nombre_persona, autorizado, hora_desde, hora_hasta FROM usuarios_rfid WHERE uuid = ?\";\nmsg.payload = [uuid];\nmsg.uuid_rfid = uuid; // Guardar el UUID original para usarlo más tarde en el log\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 120,
+        "wires": [
+            [
+                "edd8fb22706bb090"
+            ]
+        ]
+    },
+    {
+        "id": "edd8fb22706bb090",
+        "type": "mysql",
+        "z": "8ba941f9ff791f60",
+        "mydb": "75a222f4db1f0e1a",
+        "name": "Consultar Usuarios RFID",
+        "x": 670,
+        "y": 140,
+        "wires": [
+            [
+                "bf15d8a123010ddc",
+                "0813652eeee2c67e"
+            ]
+        ]
+    },
+    {
+        "id": "bf15d8a123010ddc",
+        "type": "function",
+        "z": "8ba941f9ff791f60",
+        "name": "Procesar Resultado y Log (UTC-3)",
+        "func": "const uuid_rfid = msg.uuid_rfid; // Recuperar el UUID original\nlet unlock_command;\nlet resultado_acceso;\nlet nombre_persona_acceso = null; // Inicializar como null\n\n// 1) Usar directamente Date() local, sin restar horas\nconst now = new Date();\n\n// 2) Formatear YYYY-MM-DD HH:mm:ss desde la misma fecha local\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst hours = String(now.getHours()).padStart(2, '0');\nconst minutes = String(now.getMinutes()).padStart(2, '0');\nconst seconds = String(now.getSeconds()).padStart(2, '0');\nconst formatted_now = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;\n\n// 3) Extraer hora actual para comparar (HH:mm:ss)\nconst current_hora = `${hours}:${minutes}:${seconds}`;\n\n// Helper: convierte \"HH:mm:ss\" → segundos desde medianoche\nfunction horaEnSegundos(horaStr) {\n    const [h, m, s] = horaStr.split(':').map(Number);\n    return h * 3600 + m * 60 + s;\n}\n\nconst segundosActual = horaEnSegundos(current_hora);\n\nif (msg.payload && msg.payload.length > 0) {\n    const user = msg.payload[0];\n    const isAuthorizedInDB = user.autorizado === 1 || user.autorizado === true;\n\n    if (isAuthorizedInDB) {\n        const desde = horaEnSegundos(user.hora_desde);\n        const hasta = horaEnSegundos(user.hora_hasta);\n\n        // Detectar rango normal vs. rango que cruza medianoche\n        const dentroDeHorario = (desde <= hasta)\n            ? (segundosActual >= desde && segundosActual <= hasta)\n            : (segundosActual >= desde || segundosActual <= hasta);\n\n        if (dentroDeHorario) {\n            unlock_command = 1;\n            resultado_acceso = \"Autorizado\";\n            nombre_persona_acceso = user.nombre_persona;\n        } else {\n            unlock_command = 0;\n            resultado_acceso = \"Denegado - Fuera de horario\";\n            nombre_persona_acceso = user.nombre_persona;\n        }\n    } else {\n        unlock_command = 0;\n        resultado_acceso = \"Denegado - No autorizado en DB\";\n        nombre_persona_acceso = user.nombre_persona;\n    }\n} else {\n    unlock_command = 0;\n    resultado_acceso = \"Denegado - UUID no encontrado\";\n    nombre_persona_acceso = null;\n}\n\n// Mensaje MQTT para desbloquear\nconst msgUnlock = {\n    topic: \"etec/cerraduras/lab1elec/unlock\",\n    payload: unlock_command,\n    qos: 0,\n    retain: false\n};\n\n// Mensaje para log en la BD\nconst msgLog = {\n    topic: \"INSERT INTO registros_acceso (laboratorio_id, tipo_acceso, usuario_admin, uuid_rfid, resultado, creado_en) VALUES (?, ?, ?, ?, ?, ?)\",\n    payload: [\n        \"3\",\n        \"RFID\",\n        nombre_persona_acceso,\n        uuid_rfid,\n        resultado_acceso,\n        formatted_now\n    ]\n};\n\nreturn [msgUnlock, msgLog];\n",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 120,
+        "wires": [
+            [
+                "032839fa2721e4d4",
+                "0813652eeee2c67e"
+            ],
+            [
+                "d8233abdd5abc4eb",
+                "0813652eeee2c67e"
+            ]
+        ]
+    },
+    {
+        "id": "032839fa2721e4d4",
+        "type": "mqtt out",
+        "z": "8ba941f9ff791f60",
+        "name": "Enviar Comando Unlock",
+        "topic": "etec/cerraduras/lab1elec/open",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "2ce5f49d22fbcc88",
+        "x": 1230,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "d8233abdd5abc4eb",
+        "type": "mysql",
+        "z": "8ba941f9ff791f60",
+        "mydb": "75a222f4db1f0e1a",
+        "name": "Registrar Acceso",
+        "x": 1230,
+        "y": 160,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "0813652eeee2c67e",
+        "type": "debug",
+        "z": "8ba941f9ff791f60",
+        "name": "debug 13",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1180,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "7d1a831f5d105df3",
+        "type": "mqtt in",
+        "z": "8ba941f9ff791f60",
+        "name": "",
+        "topic": "etec/cerraduras/lab1elec/unlock",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "2ce5f49d22fbcc88",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 390,
+        "y": 280,
+        "wires": [
+            [
+                "aa98322a1272dfa8"
+            ]
+        ]
+    },
+    {
+        "id": "371d3ff6aa900ddd",
+        "type": "debug",
+        "z": "8ba941f9ff791f60",
+        "name": "debug 14",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 940,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "7ac309896638583e",
+        "type": "mqtt out",
+        "z": "8ba941f9ff791f60",
+        "name": "Enviar Comando Unlock",
+        "topic": "etec/cerraduras/lab1elec/open",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "2ce5f49d22fbcc88",
+        "x": 990,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "aa98322a1272dfa8",
+        "type": "function",
+        "z": "8ba941f9ff791f60",
+        "name": "Procesar Resultado y Log (UTC-3)",
+        "func": "msg.payload = \"1\";\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 680,
+        "y": 280,
+        "wires": [
+            [
+                "371d3ff6aa900ddd",
+                "7ac309896638583e"
+            ]
+        ]
+    },
+    {
+        "id": "2ce5f49d22fbcc88",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "172.17.0.1",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "75a222f4db1f0e1a",
+        "type": "MySQLdatabase",
+        "name": "etec_cerraduras",
+        "host": "192.168.54.120",
+        "port": "3306",
+        "db": "etec_cerraduras",
+        "tz": "",
+        "charset": "UTF8"
+    }
+]

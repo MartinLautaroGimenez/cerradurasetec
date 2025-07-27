@@ -1,0 +1,73 @@
+version: '3.8'
+services:
+  web:
+    build: ./web
+    ports:
+      - '8000:8000'
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_NAME: etec_cerraduras
+      DB_USER: etec_user
+      DB_PASS: etec_pass
+    volumes:
+      - ./web:/usr/src/app:ro
+    command: gunicorn --bind 0.0.0.0:8000 app:app
+
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: etec_cerraduras
+      MYSQL_USER: etec_user
+      MYSQL_PASSWORD: etec_pass
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - '3306:3306'
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    depends_on:
+      - db
+    environment:
+      PMA_HOST: db
+      PMA_USER: etec_user
+      PMA_PASSWORD: etec_pass
+    ports:
+      - '8080:80'
+
+  mosquitto:
+    image: eclipse-mosquitto
+    ports:
+      - '1883:1883'
+      - '9001:9001'
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  nodered:
+    image: nodered/node-red:latest
+    ports:
+      - '1880:1880'
+    volumes:
+      - ./node-red/flows.json:/data/flows.json:ro
+    environment:
+      TZ: America/Argentina/Mendoza
+
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - web
+    ports:
+      - '80:80'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web/static:/usr/src/app/static:ro
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
